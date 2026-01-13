@@ -101,7 +101,6 @@ class BipedDataset(data.Dataset):
         if self.split == "train":
             # Get edge.
             edge_path = join(self.dataset_dir, self.edges_path[index])
-            print(self.dataset_dir, self.edges_path[index])
             edge = cv2.imread(edge_path, cv2.IMREAD_GRAYSCALE)
             edge = edge[np.newaxis, :, :]  # Add one channel at first (CHW).
             edge[edge < 127.5]  = 0.0
