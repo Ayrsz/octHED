@@ -1,11 +1,13 @@
 import os
-import sys
-import torch
 import pickle
+import sys
 
+import torch
+from matplotlib import pyplot as plt
 
 class Logger(object):
-    """ Logger class. """
+    """Logger class."""
+
     def __init__(self, path=None):
         self.console = sys.stdout
         self.file = None
@@ -35,11 +37,12 @@ class Logger(object):
     def close(self):
         self.console.close()
         if self.file is not None:
-                self.file.close()
+            self.file.close()
 
 
 class AverageMeter(object):
-    """ Compute and store the average and current value. """
+    """Compute and store the average and current value."""
+
     def __init__(self):
         self.val = None
         self.avg = None
@@ -61,12 +64,12 @@ class AverageMeter(object):
 
 
 def save_checkpoint(state, path='./checkpoint.pth'):
-    """ Save current state as checkpoint. """
+    """Save current state as checkpoint."""
     torch.save(state, path)
 
 
-def load_checkpoint(net, opt, path='./checkpoint.pth'):
-    """ Load previous pre-trained checkpoint.
+def load_checkpoint(net, opt, path='./checkpoint.pth', map_location='cuda'):
+    """Load previous pre-trained checkpoint.
     :param net:  Network instance.
     :param opt:  Optimizer instance.
     :param path: Path of checkpoint file.
@@ -74,32 +77,59 @@ def load_checkpoint(net, opt, path='./checkpoint.pth'):
     """
     if os.path.isfile(path):
         print('=> Loading checkpoint {}...'.format(path))
-        checkpoint = torch.load(path)
+        checkpoint = torch.load(path, map_location=map_location)
         net.load_state_dict(checkpoint['net'])
-        opt.load_state_dict(checkpoint['opt'])
+        # opt.load_state_dict(checkpoint['opt'])
         return checkpoint['epoch']
     else:
         raise ValueError('=> No checkpoint found at {}.'.format(path))
 
 
 def load_vgg16_caffe(net, path='./5stage-vgg.py36pickle'):
-    """ Load network parameters from VGG-16 Caffe model. """
+    """Load network parameters from VGG-16 Caffe model."""
     load_pretrained_caffe(net, path, only_vgg=True)
 
 
-def load_pretrained_caffe(net, path='./hed_pretrained_bsds.py36pickle', only_vgg=False):
-    """ Load network parameters from pre-trained HED Caffe model. """
+def load_pretrained_caffe(
+    net, path='./hed_pretrained_bsds.py36pickle', only_vgg=False
+):
+    """Load network parameters from pre-trained HED Caffe model."""
     # Read pretrained parameters.
     with open(path, 'rb') as f:
         pretrained_params = pickle.load(f)
 
     # Load parameters into network.
     print('=> Start loading parameters...')
-    vgg_layers_name = ['conv1_1', 'conv1_2', 'conv2_1', 'conv2_2', 'conv3_1', 'conv3_2', 'conv3_3',
-                       'conv4_1', 'conv4_2', 'conv4_3', 'conv5_1', 'conv5_2', 'conv5_3']
+    vgg_layers_name = [
+        'conv1_1',
+        'conv1_2',
+        'conv2_1',
+        'conv2_2',
+        'conv3_1',
+        'conv3_2',
+        'conv3_3',
+        'conv4_1',
+        'conv4_2',
+        'conv4_3',
+        'conv5_1',
+        'conv5_2',
+        'conv5_3',
+    ]
     for name, param in net.named_parameters():
         _, layer_name, var_name = name.split('.')
-        if (only_vgg is False) or ((only_vgg is True) and (layer_name in vgg_layers_name)):
-            param.data.copy_(torch.from_numpy(pretrained_params[layer_name][var_name]))
+        if (only_vgg is False) or (
+            (only_vgg is True) and (layer_name in vgg_layers_name)
+        ):
+            param.data.copy_(
+                torch.from_numpy(pretrained_params[layer_name][var_name])
+            )
             print('=> Loaded {}.'.format(name))
     print('=> Finish loading parameters.')
+
+def save_graph_of_loss(losses, path = "./output/graph.jpg"):
+    plt.plot(losses)
+    plt.title("Losses (Epoch x Loss)")
+    plt.xlabel("Epochs")
+    plt.ylabel("Loss")
+    plt.savefig(path)
+    plt.close()
