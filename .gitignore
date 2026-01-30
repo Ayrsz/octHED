@@ -7,3 +7,6 @@ data/
 eval/output/
 .ipynb_checkpoints/
 __pycache__/
+trained_models/
+preds/
+ValidateImages/
