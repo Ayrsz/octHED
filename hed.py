@@ -105,12 +105,17 @@ parser.add_argument(
 )
 # 4. Files and folders.
 parser.add_argument(
+    '--fine_tuning', default = False, help = "If true, set the vgg image net init", action = "store_true"
+)
+
+parser.add_argument(
     '--vgg16_caffe', default='', help='Resume VGG-16 Caffe parameters.'
 )
 parser.add_argument('--checkpoint', default='', help='Resume the checkpoint.')
 parser.add_argument(
     '--caffe_model', default='', help='Resume HED Caffe model.'
 )
+
 parser.add_argument('--output', default='./output', help='Output folder.')
 parser.add_argument(
     '--dataset',
@@ -350,14 +355,23 @@ def main():
     # IV. Pre-trained parameters.
     ################################################
     # Load parameters from pre-trained VGG-16 Caffe model.
-    if args.vgg16_caffe and isinstance(net.module, OCTHED):
+
+    
+    if args.fine_tuning and isinstance(net.module, OCTHED): #If is octave
         initializer = OctaveVGGInitializer()
-    elif args.vgg16_caffe and isinstance(net.module, FFCHED):
-        raise NotImplementedError('Not implemented yet!')
-
-    elif args.vgg16_caffe:
+        print("FINE-TUNING OCTHED")
+    elif args.fine_tuning and args.vgg16_caffe != "" and isinstance(net.module, HED): #If is the normal model with caffe
         initializer = CaffeVGGInitializer(path=args.vgg16_caffe, only_vgg=True)
+        print("FINE-TUNING HED CAFFE")
+    elif args.fine_tuning and isinstance(net.module, HED): #If is the normal model without caffe
+        initializer = OctaveVGGInitializer()
+        print("FINE-TUNING HED")
+    elif args.fine_tuning and isinstance(net.module, FFCHED): # If is FFCHED
+        raise NotImplementedError('Not implemented yet!')
+    
+    
 
+    breakpoint()
     initializer.load(net, device) if args.vgg16_caffe else 0
 
     # Resume the checkpoint.
