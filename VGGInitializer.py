@@ -58,7 +58,6 @@ class OctaveVGGInitializer(AbstractVGGInitializer):
 
         vgg_layers = [m for m in vgg.features if isinstance(m, nn.Conv2d)]
 
-        # TA DANDO ERRO PORQUE O OCTAVE CONTA VARIAS CAMADAS, SE LIGAR! VOLTA AQUI DPS
         hed_blocks = [
             [
                 layer
@@ -133,3 +132,71 @@ class OctaveVGGInitializer(AbstractVGGInitializer):
 class FourierVGGInitializer(AbstractVGGInitializer):
     def load():
         pass
+
+class ExitVGGInitializer(AbstractVGGInitializer):
+    def load(self, net: nn.DataParallel, device: str):
+        # A Data Parallel atribute
+        net = net.module
+
+        vgg = models.vgg16(weights=models.VGG16_Weights.IMAGENET1K_V1).to(
+            device
+        )
+
+        vgg_layers = [m for m in vgg.features if isinstance(m, nn.Conv2d)]
+
+        hed_blocks = [
+            [
+                layer
+                for (name, layer) in net.named_children()
+                if 'conv1' in name
+            ],
+            [
+                layer
+                for (name, layer) in net.named_children()
+                if 'conv2' in name
+            ],
+            [
+                layer
+                for (name, layer) in net.named_children()
+                if 'conv3' in name
+            ],
+            [
+                layer
+                for (name, layer) in net.named_children()
+                if 'conv4' in name
+            ],
+            [
+                layer
+                for (name, layer) in net.named_children()
+                if 'conv5' in name
+            ],
+        ]
+
+        residual_blocks = [
+            layer 
+            for (name, layer) in net.named_children()
+            if 'residual' in name
+        ]
+
+        vgg_blocks = [
+            vgg_layers[:2],
+            vgg_layers[2:4],
+            vgg_layers[4:7],
+            vgg_layers[7:10],
+            vgg_layers[10:13],
+        ]
+
+        for hed_set, vgg_set in zip(hed_blocks, vgg_blocks):
+            # assert len(hed_set) == len(vgg_blocks), f"{len(hed_set)} and {len(vgg_blocks)}"
+            for hed_layer, vgg_layer in zip(hed_set, vgg_set):
+                if isinstance(hed_layer, nn.Conv2d):
+                    hed_layer.weight.data.copy_(vgg_layer.weight.data)
+                    hed_layer.bias.data.copy_(vgg_layer.bias.data)
+
+        for layer_residual in residual_blocks:
+            nn.init.xavier_normal_(layer_residual.linear1.weight)
+            nn.init.constant_(layer_residual.linear1.bias, 0)
+            nn.init.xavier_normal_(layer_residual.linear2.weight)
+            nn.init.constant_(layer_residual.linear2.bias, 1)
+
+        
