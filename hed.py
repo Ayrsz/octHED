@@ -22,15 +22,17 @@ from fourierhed_model import FFCHED
 from hed_model import HED
 from octave_conv import OctaveConv
 from octhed_model import OCTHED
+from exitationhed_model import EXITHED
 from utils import (
     AverageMeter,
     Logger,
     load_checkpoint,
     load_pretrained_caffe,
     save_checkpoint,
-    save_graph_of_loss
+    save_graph_of_loss,
+    write_config_yaml
 )
-from VGGInitializer import CaffeVGGInitializer, OctaveVGGInitializer
+from VGGInitializer import CaffeVGGInitializer, OctaveVGGInitializer, ExitVGGInitializer
 
 # Parse arguments.
 parser = argparse.ArgumentParser(description='HED training.')
@@ -39,7 +41,10 @@ parser.add_argument(
     '--test', default=False, help='Only test the model.', action='store_true'
 )
 parser.add_argument(
-    '--graph', default = True, help='Save plot gaph', action = 'store_true',
+    '--graph', default = False, help='Save plot gaph', action = 'store_true',
+)
+parser.add_argument(
+    '--save_parameters', default = False, help = 'Save parametres from training', action = 'store_true'
 )
 # 2. Counts.
 parser.add_argument(
@@ -219,9 +224,17 @@ def main():
         )
         net.to(device)
         raise NotImplementedError('Not implemented yet!')
+    elif args.model == 'EXITHED':
+        net = nn.DataParallel(
+            EXITHED(device)
+        )
+        net.to(device)
     else:
         raise ValueError(f'Invalid model {args.model}')
 
+        
+        
+    
     # Initialize the weights for HED model.
     def weights_init(m):
         """Weight initialization function."""
@@ -295,7 +308,15 @@ def main():
         elif 'score_final' in name and 'bias' in name:
             print('{:26} lr:0.002 decay:0'.format(name))
             net_parameters_id['score_final.bias'].append(param)
-
+        #Residual net
+        elif 'octdense' in name and 'weight' in name:
+            print('{:26} lr:0.001 decay:0'.format(name))
+            net_parameters_id['residual.weight'].append(param)
+        elif 'octdense' in name and 'bias' in name:
+            print('{:26} lr:0.002 decay:0'.format(name))
+            net_parameters_id['residual.bias'].append(param)
+        else:
+            print('EITA NAO PEGOU', name)
     # Create optimizer.
     opt = torch.optim.SGD(
         [
@@ -311,12 +332,12 @@ def main():
             },
             {
                 'params': net_parameters_id['conv5.weight'],
-                'lr': args.lr * 100, #ALTERADO
+                'lr': args.lr * 100, #ALTERADO ORIGINAL 100
                 'weight_decay': args.weight_decay,
             },
             {
                 'params': net_parameters_id['conv5.bias'],
-                'lr': args.lr * 200,
+                'lr': args.lr * 200, #ALTERADO ORIGINAL 200
                 'weight_decay': 0.0,
             },
             {
@@ -339,6 +360,16 @@ def main():
                 'lr': args.lr * 0.002,
                 'weight_decay': 0.0,
             },
+            {
+                'params': net_parameters_id['residual.weight'],
+                'lr': args.lr * 1,
+                'weight_decay': args.weight_decay,
+            },
+            {
+                'params': net_parameters_id['residual.bias'],
+                'lr': args.lr * 2,
+                'weight_decay': 0.0,
+            }
         ],
         lr=args.lr,
         momentum=args.momentum,
@@ -368,12 +399,15 @@ def main():
         print("FINE-TUNING HED")
     elif args.fine_tuning and isinstance(net.module, FFCHED): # If is FFCHED
         raise NotImplementedError('Not implemented yet!')
+    elif args.fine_tuning and isinstance(net.module, EXITHED):
+        initializer = ExitVGGInitializer()
+        print("oi")
+    else:
+        print('\tWITHOUT FINE TUNING!\t\n')
     
     
 
-    breakpoint()
-    initializer.load(net, device) if args.vgg16_caffe else 0
-
+    initializer.load(net, device) if args.fine_tuning else 0
     # Resume the checkpoint.
     if args.checkpoint:
         load_checkpoint(net, opt, args.checkpoint)  # Omit the returned values.
@@ -381,6 +415,7 @@ def main():
     # Resume the HED Caffe model.
     if args.caffe_model:
         load_pretrained_caffe(net, args.caffe_model)
+
 
     ################################################
     # V. Training / testing.
@@ -430,7 +465,17 @@ def main():
 
         if args.graph:
             save_graph_of_loss(train_epoch_losses)
-        
+
+        if args.save_parameters:
+            parameters = {}
+            parameters['LR'] = args.lr
+            parameters['EPOCHS'] = args.max_epoch
+            parameters['DATASET'] = str(train_dataset)
+            parameters['FINE_TUNING'] = args.fine_tuning    
+            parameters['MODEL'] = str(net)
+            write_config_yaml(config_dict=parameters)
+
+            
 
 
 def train(train_loader, net, opt, lr_schd, epoch, save_dir):
