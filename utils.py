@@ -5,6 +5,8 @@ import sys
 import torch
 from matplotlib import pyplot as plt
 
+import pyaml
+
 class Logger(object):
     """Logger class."""
 
@@ -133,3 +135,28 @@ def save_graph_of_loss(losses, path = "./output/graph.jpg"):
     plt.ylabel("Loss")
     plt.savefig(path)
     plt.close()
+
+def write_config_yaml(config_dict, target_dir = './output/'):
+    yaml_file = "config.yaml"
+
+    with open(os.path.join(target_dir, yaml_file), "w") as f:
+        yaml_doc = pyaml.yaml.safe_dump(config_dict, sort_keys= False)
+        f.write(yaml_doc)
+
+
+def read_config_yaml(target):
+    with open(target, 'r') as f:
+        yaml_data = pyaml.yaml.safe_load(f)
+    return yaml_data
+
+def calculate_metric():
+    alg : str  = 'HED',
+    model_name_list : str = 'HEDBSDS500_HSV',  
+    result_dir : str = 'PREDSGITCODE/HedBSDS500_HSV_5EPOCHS',  
+    save_dir : str = 'examples/HEDBSDS500_HSV_5EPOCHS',
+    gt_dir : str = 'GT/GT_BSDS500/testWhiteBorders',
+    key : str = 'image_data',
+    file_format : str = '.mat', 
+    workers : int = -1
+
+    
