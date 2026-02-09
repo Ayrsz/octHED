@@ -1,5 +1,10 @@
 import torch
 import torch.nn as nn
+from octave_conv import OctaveConv_ACT
+
+
+
+
 
 class SqueezeExitationBlock(nn.Module):
     def __init__(self, in_channels: int):
@@ -33,3 +38,45 @@ class SqueezeExitationBlock(nn.Module):
         x = identity * x[:, :, None, None]
 
         return x
+    
+
+class DeepConnection(nn.Module):
+    def __init__(self, in_channels : int, out_channels : int, ratio : float, alpha : float, depth : int = 3):
+        
+        assert depth > 0
+        super().__init__()
+
+        inter_features = int(in_channels*ratio)
+        self.input_conv = OctaveConv_ACT(in_channels, inter_features, kernel_size = 1, alpha_in = 0, alpha_out = alpha)
+        feature_extract = []
+
+        for i in range(depth):
+            if i < depth - 1:
+                feature_extract.append(OctaveConv_ACT(inter_features, inter_features, kernel_size = 3, padding = 1, alpha_in = alpha, alpha_out = alpha))        
+            else:
+                feature_extract.append(OctaveConv_ACT(inter_features, out_channels, kernel_size= 3, padding = 1, alpha_in = alpha, alpha_out = 0))
+
+        
+        self.feature_extract_sequential = nn.Sequential(*feature_extract)
+        
+        
+        self.exitation_block = SqueezeExitationBlock(out_channels)
+    
+
+    def forward(self, x):
+        
+        x = self.input_conv(x)
+        x = self.feature_extract_sequential(x)[0] #Octave sequential
+        x = self.exitation_block(x)
+        return x
+
+if __name__ == "__main__":
+    test = torch.rand((10, 56, 255, 255)) # [B, C, W, H]
+    model = DeepConnection(56, 100, ratio = 1, alpha = 0.5, depth= 10)
+    
+    result = model(test)
+    print(model)
+    print(result.shape)
+        
+
+ 

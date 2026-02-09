@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from torch import nn
-from exitation_block import SqueezeExitationBlock
+from exitation_block import SqueezeExitationBlock, DeepConnection
 
 class EXITHED(nn.Module):
     """HED network."""
@@ -10,7 +10,7 @@ class EXITHED(nn.Module):
         super(EXITHED, self).__init__()
 
         self.device = device
-        # Layers.
+        # Layers.,
         self.conv1_1 = nn.Conv2d(3, 64, 3, padding=35)
         self.conv1_2 = nn.Conv2d(64, 64, 3, padding=1)
 
@@ -29,11 +29,10 @@ class EXITHED(nn.Module):
         self.conv5_2 = nn.Conv2d(512, 512, 3, padding=1)
         self.conv5_3 = nn.Conv2d(512, 512, 3, padding=1)
 
-        self.residual_1 = SqueezeExitationBlock(64)
-        self.residual_2 = SqueezeExitationBlock(128)
-        self.residual_3 =  SqueezeExitationBlock(256)
-        self.residual_4 =  SqueezeExitationBlock(512)
-        self.residual_5 =  SqueezeExitationBlock(512)
+        self.octdense_conection_VGG2 = DeepConnection(64, 128, ratio = 1, alpha = 0.75, depth= 5)
+        self.octdense_conection_VGG3 = DeepConnection(128, 256, ratio = 1, alpha = 0.5, depth= 3)
+        self.octdense_conection_VGG4 = DeepConnection(256, 512, ratio = 1, alpha = 0.25, depth = 3)
+        self.octdense_conection_VGG5 = DeepConnection(512, 512, ratio = 1, alpha = 0.25, depth = 2)
 
         self.relu = nn.ReLU()
         # Note: ceil_mode – when True, will use ceil instead of floor to compute the output shape.
@@ -151,39 +150,40 @@ class EXITHED(nn.Module):
         image_h, image_w = x.shape[2], x.shape[3]
         conv1_1 = self.relu(self.conv1_1(x))
         conv1_2 = self.relu(self.conv1_2(conv1_1))  # Side output 1.
-        residual_1 = self.residual_1(conv1_2)
-        pool1 = self.maxpool(residual_1)
-
+        pool1 = self.maxpool(conv1_2)
+        
+        residual_2 = self.octdense_conection_VGG2(pool1)
         conv2_1 = self.relu(self.conv2_1(pool1))
         conv2_2 = self.relu(self.conv2_2(conv2_1))  # Side output 2.
-        residual_2 = self.residual_2(conv2_2)
-        pool2 = self.maxpool(residual_2)
+        conv2_2 = conv2_2 + residual_2
+        pool2 = self.maxpool(conv2_2)
 
-
+        residual_3 = self.octdense_conection_VGG3(pool2)
         conv3_1 = self.relu(self.conv3_1(pool2))
         conv3_2 = self.relu(self.conv3_2(conv3_1))
         conv3_3 = self.relu(self.conv3_3(conv3_2))  # Side output 3.
-        residual_3 = self.residual_3(conv3_3)
-        pool3 = self.maxpool(residual_3)
+        conv3_3 = conv3_3 + residual_3
+        pool3 = self.maxpool(conv3_3)
 
 
+        residual_4 = self.octdense_conection_VGG4(pool3)
         conv4_1 = self.relu(self.conv4_1(pool3))
         conv4_2 = self.relu(self.conv4_2(conv4_1))
         conv4_3 = self.relu(self.conv4_3(conv4_2))  # Side output 4.
-        residual_4 = self.residual_4(conv4_3)
-        pool4 = self.maxpool(residual_4)
+        conv4_3 = conv4_3 + residual_4
+        pool4 = self.maxpool(conv4_3)
 
-
+        residual_5 = self.octdense_conection_VGG5(pool4)
         conv5_1 = self.relu(self.conv5_1(pool4))
         conv5_2 = self.relu(self.conv5_2(conv5_1))
         conv5_3 = self.relu(self.conv5_3(conv5_2))  # Side output 5.
-        residual_5 = self.residual_5(conv5_3)
+        conv5_3 = conv5_3 + residual_5
 
-        score_dsn1 = self.score_dsn1(residual_1)
-        score_dsn2 = self.score_dsn2(residual_2)
-        score_dsn3 = self.score_dsn3(residual_3)
-        score_dsn4 = self.score_dsn4(residual_4)
-        score_dsn5 = self.score_dsn5(residual_5)
+        score_dsn1 = self.score_dsn1(conv1_2)
+        score_dsn2 = self.score_dsn2(conv2_2)
+        score_dsn3 = self.score_dsn3(conv3_3)
+        score_dsn4 = self.score_dsn4(conv4_3)
+        score_dsn5 = self.score_dsn5(conv5_3)
 
         upsample2 = torch.nn.functional.conv_transpose2d(
             score_dsn2, self.weight_deconv2, stride=2
