@@ -7,11 +7,12 @@ from torch.utils import data
 
 
 class BsdsDataset(data.Dataset):
-    def __init__(self, dataset_dir='./data/HED-BSDS', split='train', hsv = False):
+    def __init__(self, dataset_dir : str ='./data/HED-BSDS', split : str ='train', hsv : bool = False, threshold : float = 127.5):
         # Set dataset directory and split.
         self.dataset_dir = dataset_dir
         self.split = split
         self.use_hsv = hsv
+        self.threshold = threshold
 
         # Read the list of images and (possible) edges.
         if self.split == 'train':
@@ -43,10 +44,11 @@ class BsdsDataset(data.Dataset):
             edge_path = join(self.dataset_dir, self.edges_path[index])
             edge = cv2.imread(edge_path, cv2.IMREAD_GRAYSCALE)
             edge = edge[np.newaxis, :, :]  # Add one channel at first (CHW).
-            edge[edge < 127.5] = 0.0
-            edge[edge >= 127.5] = 1.0
+        
+            edge[edge < self.threshold] = 0.0
+            edge[edge >= self.threshold] = 1.0
             edge = edge.astype(np.float32)
-
+            
         # Get image.
         image_path = join(self.dataset_dir, self.images_path[index])
         image = cv2.imread(image_path)
@@ -170,7 +172,4 @@ if __name__ == "__main__":
     unit = dataset[0]
     
     a, b = unit[0], unit[1]
-    
-    print(a.shape)
-    print(b.shape)
-    print(b.max())
+
