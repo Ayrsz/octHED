@@ -6,7 +6,7 @@ import torch
 from torch import nn
 from torchvision.utils import save_image
 
-from hed_model import HED
+from models.hed_model import HED
 from utils import load_checkpoint
 
 images_files = ['.png']
