@@ -5,7 +5,7 @@ from torch import nn
 from torchvision import models
 
 # CUSTOM IMPORTS ####
-from octave_conv import *
+from models.octave_conv import *
 
 
 class AbstractVGGInitializer:
@@ -172,10 +172,10 @@ class ExitVGGInitializer(AbstractVGGInitializer):
             ],
         ]
 
-        residual_blocks = [
+        exitation_blocks = [
             layer 
             for (name, layer) in net.named_children()
-            if 'residual' in name
+            if 'exitation' in name
         ]
 
         vgg_blocks = [
@@ -193,10 +193,78 @@ class ExitVGGInitializer(AbstractVGGInitializer):
                     hed_layer.weight.data.copy_(vgg_layer.weight.data)
                     hed_layer.bias.data.copy_(vgg_layer.bias.data)
 
-        for layer_residual in residual_blocks:
-            nn.init.xavier_normal_(layer_residual.linear1.weight)
-            nn.init.constant_(layer_residual.linear1.bias, 0)
-            nn.init.xavier_normal_(layer_residual.linear2.weight)
-            nn.init.constant_(layer_residual.linear2.bias, 1)
+        for layer_exitation in exitation_blocks:
+            nn.init.xavier_normal_(layer_exitation.linear1.weight)
+            nn.init.constant_(layer_exitation.linear1.bias, 0)
+            nn.init.xavier_normal_(layer_exitation.linear2.weight)
+            nn.init.constant_(layer_exitation.linear2.bias, 1)
+
+class UncertHEDInitializar(AbstractVGGInitializer):
+    def load(self, net: nn.DataParallel, device: str):
+
+        # A Data Parallel atribute
+        net = net.module
+
+        vgg = models.vgg16(weights=models.VGG16_Weights.IMAGENET1K_V1).to(device)
+
+        vgg_layers = [m for m in vgg.features if isinstance(m, nn.Conv2d)]
+
+        hed_blocks = [
+            [
+                layer
+                for (name, layer) in net.named_children()
+                if 'conv1' in name
+            ],
+            [
+                layer
+                for (name, layer) in net.named_children()
+                if 'conv2' in name
+            ],
+            [
+                layer
+                for (name, layer) in net.named_children()
+                if 'conv3' in name
+            ],
+            [
+                layer
+                for (name, layer) in net.named_children()
+                if 'conv4' in name
+            ],
+            [
+                layer
+                for (name, layer) in net.named_children()
+                if 'conv5' in name
+            ],
+        ]
+
+        vgg_blocks = [
+            vgg_layers[:2],
+            vgg_layers[2:4],
+            vgg_layers[4:7],
+            vgg_layers[7:10],
+            vgg_layers[10:13],
+        ]
+
+        decoder_blocks = [
+            #Two layers, MEAN and STD
+            layer for (name, layer) in net.named_children() if 'decoder' in name
+        ]
+
+        for hed_set, vgg_set in zip(hed_blocks, vgg_blocks):
+            # assert len(hed_set) == len(vgg_blocks), f"{len(hed_set)} and {len(vgg_blocks)}"
+            for hed_layer, vgg_layer in zip(hed_set, vgg_set):
+                if isinstance(hed_layer, nn.Conv2d):
+                    hed_layer.weight.data.copy_(vgg_layer.weight.data)
+                    hed_layer.bias.data.copy_(vgg_layer.bias.data)
+        
+
+
+        for decoder in decoder_blocks:
+            for name, layer in decoder.named_modules():
+                
+                if isinstance(layer, nn.Conv2d):
+                    nn.init.kaiming_normal_(layer.weight)
+                    nn.init.zeros_(layer.bias)
+
 
         
