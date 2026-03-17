@@ -1,169 +1,45 @@
 import numpy as np
 import torch
 from torch import nn
+from models.exitation_block import SqueezeExitationBlock, DeepConnection
 
-from octave_conv import OctaveConv_ACT
+class DENSEHED(nn.Module):
+    """HED network."""
 
+    def __init__(self, device):
+        super(DENSEHED, self).__init__()
 
-class MaxPoolTuple(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.maxpool = nn.MaxPool2d(kernel_size=2, stride=2)
-
-    def forward(self, x: tuple):
-        (high, low) = x
-        if low is None:
-            return (self.maxpool(high), None)
-        elif high is None:
-            return (None, self.maxpool(low))
-        else:
-            return (self.maxpool(high), self.maxpool(low))
-
-
-class OCTHED(nn.Module):
-    """OCTHED network."""
-
-    def __init__(self, device, alpha, octave_layers=['conv2_1', 'conv2_2']):
-        super(OCTHED, self).__init__()
-        # Layers.
-        self.relu = nn.ReLU
-        self.maxpool_octave = MaxPoolTuple()
-
+        self.device = device
+        # Layers.,
         self.conv1_1 = nn.Conv2d(3, 64, 3, padding=35)
         self.conv1_2 = nn.Conv2d(64, 64, 3, padding=1)
 
-        self.conv2_1 = make_maybe_octave(
-            'conv2_1',
-            octave_layers,
-            64,
-            128,
-            3,
-            alpha_in=0,
-            alpha_out=alpha,
-            padding=1,
-            activation_layer=self.relu,
-        )
+        self.conv2_1 = nn.Conv2d(64, 128, 3, padding=1)
+        self.conv2_2 = nn.Conv2d(128, 128, 3, padding=1)
 
-        self.conv2_2 = make_maybe_octave(
-            'conv2_2',
-            octave_layers,
-            128,
-            128,
-            3,
-            alpha_in=alpha,
-            alpha_out=0,
-            padding=1,
-            activation_layer=self.relu,
-        )
+        self.conv3_1 = nn.Conv2d(128, 256, 3, padding=1)
+        self.conv3_2 = nn.Conv2d(256, 256, 3, padding=1)
+        self.conv3_3 = nn.Conv2d(256, 256, 3, padding=1)
 
-        self.conv3_1 = make_maybe_octave(
-            'conv3_1',
-            octave_layers,
-            128,
-            256,
-            3,
-            alpha_in=0,
-            alpha_out=alpha,
-            padding=1,
-            activation_layer=self.relu,
-        )
+        self.conv4_1 = nn.Conv2d(256, 512, 3, padding=1)
+        self.conv4_2 = nn.Conv2d(512, 512, 3, padding=1)
+        self.conv4_3 = nn.Conv2d(512, 512, 3, padding=1)
 
-        self.conv3_2 = make_maybe_octave(
-            'conv3_2',
-            octave_layers,
-            256,
-            256,
-            3,
-            alpha_in=alpha,
-            alpha_out=alpha,
-            padding=1,
-            activation_layer=self.relu,
-        )
+        self.conv5_1 = nn.Conv2d(512, 512, 3, padding=1)
+        self.conv5_2 = nn.Conv2d(512, 512, 3, padding=1)
+        self.conv5_3 = nn.Conv2d(512, 512, 3, padding=1)
 
-        self.conv3_3 = make_maybe_octave(
-            'conv3_3',
-            octave_layers,
-            256,
-            256,
-            3,
-            alpha_in=alpha,
-            alpha_out=0,
-            padding=1,
-            activation_layer=self.relu,
-        )
+        #self.octdense_conection_VGG2 = DeepConnection(64, 128, ratio = 1, alpha = 0.75, depth= 5)
+        #self.octdense_conection_VGG3 = DeepConnection(128, 256, ratio = 1, alpha = 0.5, depth= 3)
+        #self.octdense_conection_VGG4 = DeepConnection(256, 512, ratio = 1, alpha = 0.25, depth = 3)
+        #self.octdense_conection_VGG5 = DeepConnection(512, 512, ratio = 1, alpha = 0.25, depth = 2)
+        self.deep_conection1 = DeepConnection(64, 64, 5, alpha = 0.5, depth=3, ratio = 1)
+        self.deep_conection2 = DeepConnection(128, 128, 5, alpha = 0.5, depth=3, ratio = 1)
+        self.deep_conection3 = DeepConnection(256, 256, 3, alpha = 0.5, depth=3, ratio = 1)
+        self.deep_conection4 = DeepConnection(512, 512, 3, alpha = 0.5, depth=3, ratio = 1)
+        self.deep_conection5 = DeepConnection(512, 512, 3, alpha = 0.5, depth=3, ratio = 1)
 
-        self.conv4_1 = make_maybe_octave(
-            'conv4_1',
-            octave_layers,
-            256,
-            512,
-            3,
-            alpha_in=0,
-            alpha_out=alpha,
-            padding=1,
-            activation_layer=self.relu,
-        )
-
-        self.conv4_2 = make_maybe_octave(
-            'conv4_2',
-            octave_layers,
-            512,
-            512,
-            3,
-            alpha_in=alpha,
-            alpha_out=alpha,
-            padding=1,
-            activation_layer=self.relu,
-        )
-
-        self.conv4_3 = make_maybe_octave(
-            'conv4_3',
-            octave_layers,
-            512,
-            512,
-            3,
-            alpha_in=alpha,
-            alpha_out=0,
-            padding=1,
-            activation_layer=self.relu,
-        )
-
-        self.conv5_1 = make_maybe_octave(
-            'conv5_1',
-            octave_layers,
-            512,
-            512,
-            3,
-            alpha_in=0,
-            alpha_out=alpha,
-            padding=1,
-            activation_layer=self.relu,
-        )
-
-        self.conv5_2 = make_maybe_octave(
-            'conv5_2',
-            octave_layers,
-            512,
-            512,
-            3,
-            alpha_in=alpha,
-            alpha_out=alpha,
-            padding=1,
-            activation_layer=self.relu,
-        )
-
-        self.conv5_3 = make_maybe_octave(
-            'conv5_3',
-            octave_layers,
-            512,
-            512,
-            3,
-            alpha_in=alpha,
-            alpha_out=0,
-            padding=1,
-            activation_layer=self.relu,
-        )
-
+        self.relu = nn.ReLU()
         # Note: ceil_mode – when True, will use ceil instead of floor to compute the output shape.
         #       The reason to use ceil mode here is that later we need to upsample the feature maps and crop the results
         #       in order to have the same shape as the original image. If ceil mode is not used, the up-sampled feature
@@ -277,60 +153,43 @@ class OCTHED(nn.Module):
     def forward(self, x):
         # VGG-16 network.
         image_h, image_w = x.shape[2], x.shape[3]
-
-        conv1_1 = abstract_forward(
-            conv=self.conv1_1, x=x, activation=self.relu()
-        )
-        conv1_2 = abstract_forward(
-            conv=self.conv1_2, x=conv1_1, activation=self.relu()
-        )  # Side output 1
+        conv1_1 = self.relu(self.conv1_1(x))
+        conv1_2 = self.relu(self.conv1_2(conv1_1))  # Side output 1.
         pool1 = self.maxpool(conv1_2)
-
-        conv2_1 = abstract_forward(
-            conv=self.conv2_1, x=pool1, activation=self.relu()
-        )
-        conv2_2 = abstract_forward(
-            conv=self.conv2_2, x=conv2_1, activation=self.relu()
-        )  # Side output 2
+        
+        conv2_1 = self.relu(self.conv2_1(pool1))
+        conv2_2 = self.relu(self.conv2_2(conv2_1))  # Side output 2.
         pool2 = self.maxpool(conv2_2)
 
-        conv3_1 = abstract_forward(
-            conv=self.conv3_1, x=pool2, activation=self.relu()
-        )
-        conv3_2 = abstract_forward(
-            conv=self.conv3_2, x=conv3_1, activation=self.relu()
-        )
-        conv3_3 = abstract_forward(
-            conv=self.conv3_3, x=conv3_2, activation=self.relu()
-        )  # Side output 3
-        pool3 = self.maxpool(conv3_3)
+        conv3_1 = self.relu(self.conv3_1(pool2))
+        conv3_2 = self.relu(self.conv3_2(conv3_1))
+        conv3_3 = self.relu(self.conv3_3(conv3_2))  # Side output 3.
+        pool3 = self.maxpool(conv3_2)
 
-        conv4_1 = abstract_forward(
-            conv=self.conv4_1, x=pool3, activation=self.relu()
-        )
-        conv4_2 = abstract_forward(
-            conv=self.conv4_2, x=conv4_1, activation=self.relu()
-        )
-        conv4_3 = abstract_forward(
-            conv=self.conv4_3, x=conv4_2, activation=self.relu()
-        )  # Side output 4
+
+        conv4_1 = self.relu(self.conv4_1(pool3))
+        conv4_2 = self.relu(self.conv4_2(conv4_1))
+        conv4_3 = self.relu(self.conv4_3(conv4_2))  # Side output 4.
         pool4 = self.maxpool(conv4_3)
 
-        conv5_1 = abstract_forward(
-            conv=self.conv5_1, x=pool4, activation=self.relu()
-        )
-        conv5_2 = abstract_forward(
-            conv=self.conv5_2, x=conv5_1, activation=self.relu()
-        )
-        conv5_3 = abstract_forward(
-            conv=self.conv5_3, x=conv5_2, activation=self.relu()
-        )  # Side output 5
+        conv5_1 = self.relu(self.conv5_1(pool4))
+        conv5_2 = self.relu(self.conv5_2(conv5_1))
+        conv5_3 = self.relu(self.conv5_3(conv5_2))  # Side output 5.
+        
 
-        score_dsn1 = self.score_dsn1(conv1_2)
-        score_dsn2 = self.score_dsn2(conv2_2)
-        score_dsn3 = self.score_dsn3(conv3_3)
-        score_dsn4 = self.score_dsn4(conv4_3)
-        score_dsn5 = self.score_dsn5(conv5_3)
+        #DEEP EXTRACTING FEATURES
+        feat1 = self.deep_conection1(conv1_2) 
+        feat2 = self.deep_conection2(conv2_2)
+        feat3 = self.deep_conection3(conv3_3)
+        feat4 = self.deep_conection4(conv4_3)
+        feat5 = self.deep_conection5(conv5_3)
+
+
+        score_dsn1 = self.score_dsn1(feat1)
+        score_dsn2 = self.score_dsn2(feat2)
+        score_dsn3 = self.score_dsn3(feat3)
+        score_dsn4 = self.score_dsn4(feat4)
+        score_dsn5 = self.score_dsn5(feat5)
 
         upsample2 = torch.nn.functional.conv_transpose2d(
             score_dsn2, self.weight_deconv2, stride=2
@@ -406,48 +265,3 @@ def make_bilinear_weights(size, num_channels):
             if i == j:
                 w[i, j] = filt
     return w
-
-
-def make_maybe_octave(
-    layer_name,
-    octave_layers,
-    in_ch,
-    out_ch,
-    kernel_size,
-    padding,
-    alpha_in=0,
-    alpha_out=0,
-    activation_layer=None,
-):
-    flag = False
-    # Activate a whole layer to octave, avoid bugs. Setup of alpha
-    for layer in octave_layers:
-        if layer in layer_name:
-            flag = True
-
-    if flag == True:
-        conv = OctaveConv_ACT(
-            in_ch,
-            out_ch,
-            kernel_size,
-            alpha_in=alpha_in,
-            alpha_out=alpha_out,
-            padding=padding,
-            activation_layer=activation_layer,
-        )
-    else:
-        conv = nn.Conv2d(in_ch, out_ch, kernel_size, padding=padding)
-    return conv
-
-
-def abstract_forward(conv, x, activation=None):
-    if isinstance(conv, OctaveConv_ACT):
-        y = conv(x)
-        if y[1] == None:  # alpha out = 0
-            y = y[0]
-    elif activation is not None:
-        y = activation(conv(x))
-    else:
-        y = conv(x)
-
-    return y

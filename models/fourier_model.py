@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from fourier_convolution import FFC_BN_ACT
+from models.fourier_convolution import FFC_BN_ACT
 
 
 class MaxPoolTuple(nn.Module):
