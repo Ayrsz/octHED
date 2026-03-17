@@ -5,7 +5,9 @@ import sys
 import torch
 from matplotlib import pyplot as plt
 
+from collections import defaultdict
 import pyaml
+import ptflops
 
 class Logger(object):
     """Logger class."""
@@ -149,14 +151,34 @@ def read_config_yaml(target):
         yaml_data = pyaml.yaml.safe_load(f)
     return yaml_data
 
-def calculate_metric():
-    alg : str  = 'HED',
-    model_name_list : str = 'HEDBSDS500_HSV',  
-    result_dir : str = 'PREDSGITCODE/HedBSDS500_HSV_5EPOCHS',  
-    save_dir : str = 'examples/HEDBSDS500_HSV_5EPOCHS',
-    gt_dir : str = 'GT/GT_BSDS500/testWhiteBorders',
-    key : str = 'image_data',
-    file_format : str = '.mat', 
-    workers : int = -1
+def return_layer_coficients(net, LAYER_SETTINGS):
+
+    params_groups_map = defaultdict(list)
+
+    for name, param in net.named_parameters():
+        matched = False
+        for key, settings in LAYER_SETTINGS.items():
+            if key in name:
+                is_bias = 'bias' in name
+                lr_mult = settings['lr'] * (2 if is_bias else 1)
+                wd_mult = 0 if is_bias else settings['wd']
+                
+                #Tuple ({'lr':value}, {'wd':value})
+                group_key = (lr_mult, wd_mult)
+                params_groups_map[group_key].append(param)
+
+                print(f'{name:26} lr: {lr_mult:>7} decay: {wd_mult}')
+                matched = True
+                break
+    
+        if not matched:
+            print(f'EITA NAO PEGOU: {name}')
+    return params_groups_map
+
+
+def count_flops(model):
+    input_size = (3, 321, 480)
+    macs, params = ptflops.get_model_complexity_info(model, input_size)
+    print(f"MACS: {macs}\nPARAMS: {params}")
 
     
