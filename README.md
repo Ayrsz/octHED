@@ -1,4 +1,4 @@
-## A PyTorch Reimplementation of HED
+## A Octave implementatio of HED
 
 #### Introduction
 
@@ -28,18 +28,14 @@ This is a PyTorch reimplementation of [Holistically-nested Edge Detection (HED)]
 
    The results are in `output` folder. In the default settings, the HED model is trained for 40 epochs.
 
-##### Evaluate the Pre-trained Models
+##### Evaluate my pretrained model
 
 1. Evaluate the official pre-trained version:
 
    ```bash
-   python hed.py --caffe_model ./data/hed_pretrained_bsds.py36pickle --output ./output-officialpretrain --test
-   cd eval
-   (echo "data_dir = '../output-officialpretrain/test'"; cat eval_edge.m)|matlab -nodisplay -nodesktop -nosplash
+   python main.py --checkpoint ./checkpoint/epoch-9-checkpoint.pt --output test_octave --model OCTHED --alpha 0.5 --test
    ```
-
-   The result should be similar to **ODS=0.788 OIS=0.806**.
-
+   
 #### Acknowledgement
 
 This reimplementation is based on lots of prior works. Thanks to [Saining](https://github.com/s9xie/hed) for the original Caffe implementation. Thanks to [@meteorshowers](https://github.com/meteorshowers/hed-pytorch) for a PyTorch implementation where I adopt most of the code from. Thanks to [@jmbuena](https://github.com/jmbuena/toolbox.badacost.public) for a fixed version of Piotr's Toolbox. Thanks to [Berkeley Institute for Data Science](https://github.com/BIDS/BSDS500) which provides a mirror of BSDS500 dataset (the original link to the dataset seems broken).
