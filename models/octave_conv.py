@@ -1,7 +1,7 @@
 import math
 
 from torch import nn
-
+import torch.nn.functional as F 
 
 class OctaveConv(nn.Module):
     def __init__(
@@ -273,3 +273,67 @@ class Conv_BN_ACT(nn.Module):
         x_h = self.act(self.bn_h(x_h))
         x_l = self.act(self.bn_l(x_l)) if x_l is not None else None
         return x_h, x_l
+
+
+class TransposeOctConv(nn.Module):
+
+    """This is the implementation of Octave Transpose Conv from paper https://arxiv.org/abs/1906.12193"""
+
+    def __init__(
+        self,
+        in_chn,
+        out_chn,
+        alphas=[0.5, 0.5],
+        kernel=2,
+        ):
+
+        super(TransposeOctConv, self).__init__()
+
+        (self.alpha_in, self.alpha_out) = alphas
+
+        assert 1 > self.alpha_in >= 0 and 1 > self.alpha_out >= 0, \
+            'alphas values must be bound between 0 and 1, it could be 0 but not 1'
+
+        self.htoh = nn.ConvTranspose2d(in_chn - int(self.alpha_in
+                * in_chn), out_chn - int(self.alpha_out * out_chn),
+                kernel, 2)
+        self.htol = (nn.ConvTranspose2d(in_chn - int(self.alpha_in
+                     * in_chn), int(self.alpha_out * out_chn), kernel,
+                     2) if self.alpha_out > 0 else None)
+        self.ltol = (nn.ConvTranspose2d(int(self.alpha_in * in_chn),
+                     int(self.alpha_out * out_chn), kernel,
+                     2) if self.alpha_out > 0 and self.alpha_in
+                     > 0 else None)
+        self.ltoh = (nn.ConvTranspose2d(int(self.alpha_in * in_chn),
+                     out_chn - int(self.alpha_out * out_chn), kernel,
+                     2) if self.alpha_in > 0 else None)
+
+    def forward(self, x) -> tuple:
+        (high, low) = (x if isinstance(x, tuple) else (x, None))
+
+        if self.htoh is not None:
+            htoh = self.htoh(high)
+        if self.htol is not None:
+            htol = self.htol(F.avg_pool2d(high, 2, 2))
+        if self.ltol is not None and low is not None:
+            ltol = self.ltol(low)
+        if self.ltoh is not None and low is not None:
+            ltoh = F.interpolate(self.ltoh(low), scale_factor=2,
+                                 mode='nearest')
+
+        # it will behave as normal Transpose Conv operation
+
+        if self.alpha_in == 0 and self.alpha_out == 0:
+            return (htoh, None)
+
+        # case where we don't want a low frequency map as output
+
+        if self.alpha_out == 0:
+            return (htoh.add_(ltoh), None)
+
+        # otherwise add feature maps and return both high and low freq maps
+
+        htoh.add_(ltoh)
+        ltol.add_(htol)
+
+        return (htoh, ltol)

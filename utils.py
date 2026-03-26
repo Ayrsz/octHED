@@ -180,5 +180,5 @@ def count_flops(model):
     input_size = (3, 321, 480)
     macs, params = ptflops.get_model_complexity_info(model, input_size)
     print(f"MACS: {macs}\nPARAMS: {params}")
-
+    return macs, params
     

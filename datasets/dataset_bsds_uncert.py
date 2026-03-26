@@ -1,14 +1,11 @@
 import random
 from os.path import join
-
 import imageio.v2 as imageio
 import numpy as np
 import scipy.io
 import torch
 import torchvision.transforms as transforms
 from torch.utils import data
-import os
-from os.path import splitext
 
 class BSDS_UncertLoader(data.Dataset):
     """
@@ -55,8 +52,9 @@ class BSDS_UncertLoader(data.Dataset):
 
         img = imageio.imread(join(self.root, img_file))
         img = transforms.ToTensor()(img)
-        img = img[:, 1 : img.size(1), 1 : img.size(2)]
-        img = img.float()
+        if self.split == 'train':
+            img = img[:, 1 : img.size(1), 1 : img.size(2)]
+            img = img.float()
 
         if self.split == 'train':
             lb = scipy.io.loadmat(join(self.root, lb_file))

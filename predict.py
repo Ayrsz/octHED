@@ -6,7 +6,7 @@ import torch
 from torch import nn
 from torchvision.utils import save_image
 
-from models.hed_model import HED
+from models.decoder_model import UncertHED
 from utils import load_checkpoint
 
 images_files = ['.png']
@@ -65,15 +65,55 @@ class PredictClass(nn.Module):
                     os.path.join(preds_dir, 'border_' + image_name),
                 )
 
+    def predict_2(self):
+        preds_dir = './preds/'
+
+        if not (os.path.exists(preds_dir)):
+            os.makedirs(preds_dir)
+
+        with torch.no_grad():
+            self.net.eval()
+
+            for file_path in self.images_path_list:
+                print(f'>>> Processing the image {file_path} <<<')
+                image = cv.imread(file_path).astype(np.float32)
+                image = np.transpose(image, (2, 0, 1))  # HWC to CHW.
+                image = image.astype(np.float32)
+                image = torch.from_numpy(np.expand_dims(image, 0))/255
+                mean, std = net(image)
+
+
+                outputs_dist = torch.distributions.Independent(torch.distributions.Normal(loc=mean, scale=std + 0.001), 1)
+
+                outputs = torch.sigmoid(outputs_dist.rsample())
+                
+                _, _, h, w = outputs.shape
+
+                preds_list = [outputs, mean, std]
+                _, _, h, w = preds_list[0].shape
+                interm_images = torch.zeros((len(preds_list), 1, h, w))
+                
+                for i in range(len(preds_list)):
+                    # Only fetch the first image in the batch.
+                    interm_images[i, 0, :, :] = preds_list[i][0, 0, :, :]
+                
+                image_name = file_path.split('/')[-1]
+                print(f"WRITING ON {os.path.join(preds_dir, 'border_' + image_name),} ")
+                save_image(
+                    interm_images,
+                    os.path.join(preds_dir, 'border_' + image_name),
+                )
+
+
 
 if __name__ == '__main__':
-    net = torch.nn.DataParallel(HED(device))
+    net = torch.nn.DataParallel(UncertHED(device))
     load_checkpoint(
         net,
         torch.optim.SGD(net.parameters()),
-        'trained_models/HEDcomBIPEDLR1e-8_10epochs/epoch-9-checkpoint.pt',
+        './trained_models/output_HED_UAED_1_STD_LOSS/epoch-9-checkpoint.pt',
         device,
     )
 
     p = PredictClass(net.to(device))
-    p.predict_folder()
+    p.predict_2()

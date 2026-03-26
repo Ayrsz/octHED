@@ -16,17 +16,12 @@ from torch.utils.data import DataLoader
 import torch.nn.functional as F
 from tqdm import tqdm
 
-from datasets import BipedDataset, BsdsDataset
-from dataset_bsds500_uncert import BSDS_UncertLoader
+from losses.cross_entropy import cross_entropy_loss_RCF, weighted_cross_entropy_loss
+from VGGInitializer import chose_initializer
+from datasets.dataset_factory import get_dataset
 
 # Customized import.
-from models.fourier_model import FFCHED
-from models.hed_model import HED
-from models.octave_conv import OctaveConv
-from models.octave_model import OCTHED
-from models.side_outputs_dense_model import DENSEHED
-from models.exitationhed_model import EXITHED
-from models.decoder_model import UncertHED
+from models.model_factory import get_model
 from utils import (
     AverageMeter,
     Logger,
@@ -135,10 +130,17 @@ parser.add_argument(
 
 parser.add_argument('--output', default='./output', help='Output folder.')
 parser.add_argument(
-    '--dataset',
+    '--dataset_folder',
     default='./data/HED-BSDS',
     help='HED-BSDS or BIPED dataset folder.',
 )
+
+parser.add_argument(
+    '--dataset_name',
+    default='BSDS',
+    help='BSDS, BIPED OR UNCERT_BIPED',
+)
+
 # 5. Others.
 parser.add_argument(
     '--cpu', default=False, help='Enable CPU mode.', action='store_true'
@@ -187,109 +189,21 @@ def main():
     # II. Datasets.
     ################################################
     # Datasets and dataloaders.
-    if 'BSDS' in args.dataset.upper():
-        #train_dataset = BsdsDataset(dataset_dir=args.dataset, split='train', hsv = args.HSV)
-        #test_dataset = BsdsDataset(dataset_dir=args.dataset, split='test', hsv= args.HSV)
-        train_dataset = BSDS_UncertLoader(split = 'train')
-        test_dataset = BSDS_UncertLoader(split = 'test')
-    elif 'BIPED' in args.dataset.upper():
-        train_dataset = BipedDataset(dataset_dir=args.dataset, split='train', hsv= args.HSV)
-        test_dataset = BipedDataset(dataset_dir=args.dataset, split='test', hsv= args.HSV)
-    else:
-        raise ValueError('Invalid dataset')
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=args.train_batch_size,
-        num_workers=4,
-        drop_last=True,
-        shuffle=True,
-    )
-    test_loader = DataLoader(
-        test_dataset,
-        batch_size=args.test_batch_size,
-        num_workers=4,
-        drop_last=False,
-        shuffle=False,
-    )
+    train_loader = get_dataset(args, type = 'train')
+    test_loader = get_dataset(args, type = 'test')
 
     ################################################
     # III. Network and optimizer.
     ################################################
     # Create the network in GPU.
-    if args.model == 'HED':
-        net = nn.DataParallel(HED(device))
-        net.to(device)
-    elif args.model == 'OCTHED':
-        net = nn.DataParallel(
-            OCTHED(
-                device,
-                alpha=float(args.alpha),
-                octave_layers=args.octave_layers,
-            )
-        )
-        net.to(device)
-    elif args.model == 'FFCHED':
-        net = nn.DataParallel(
-            FFCHED(
-                device,
-                ratio=float(args.alpha),
-                fourier_layer=args.octave_layers,
-            )
-        )
-        net.to(device)
-        raise NotImplementedError('Not implemented yet!')
-    elif args.model == 'EXITHED':
-        net = nn.DataParallel(
-            EXITHED(device)
-        )
-        net.to(device)
-    elif args.model == 'DENSEHED':
-        net = nn.DataParallel(
-            DENSEHED(device)
-        )
-    elif args.model == 'UNCERTHED':
-        net = nn.DataParallel(UncertHED(device))
-        net.to(device)
-    else:
-        raise ValueError(f'Invalid model {args.model}')
-
-    count_flops(net.module)
+    
+    net = get_model(args, device)
+    macs, params = count_flops(net.module)
         
     
     # Initialize the weights for HED model.
-    def weights_init(m):
-        """Weight initialization function."""
-        if isinstance(m, nn.Conv2d):
-            # Initialize: m.weight.
-            if m.weight.data.shape == torch.Size([1, 5, 1, 1]):
-                # Constant initialization for fusion layer in HED network.
-                torch.nn.init.constant_(m.weight, 0.2)
-            else:
-                # Zero initialization following official repository.
-                # Reference: hed/docs/tutorial/layers.md
-                m.weight.data.zero_()
-            # Initialize: m.bias.
-            if m.bias is not None:
-                # Zero initialization.
-                m.bias.data.zero_()
-        elif isinstance(m, OctaveConv):
-            if m.conv_h2h is not None:
-                nn.init.zeros_(m.conv_h2h.weight)
-                nn.init.zeros_(m.conv_h2h.bias)
+    default_initializer(net)
 
-            if m.conv_l2l is not None:
-                nn.init.zeros_(m.conv_l2l.weight)
-                nn.init.zeros_(m.conv_l2l.bias)
-
-            if m.conv_h2l is not None:
-                nn.init.zeros_(m.conv_h2l.weight)
-                nn.init.zeros_(m.conv_h2l.bias)
-
-            if m.conv_l2h is not None:
-                nn.init.zeros_(m.conv_l2h.weight)
-                nn.init.zeros_(m.conv_l2h.bias)
-
-    net.apply(weights_init)
     # Optimizer settings.
     
     
@@ -303,8 +217,10 @@ def main():
     'score_final':   {'lr': 0.001, 'wd': 1},
     'exitation':     {'lr': 1,     'wd': 1},
     'deep_conection':{'lr': 2,     'wd': 0},
-    'decoderMEAN':   {'lr': 10,   'wd': 1},
-    'decoderSTD':    {'lr': 10,   'wd': 1},
+    'up':            {'lr': 10,    'wd': 1},
+    'extractor':     {'lr': 10,    'wd': 1},
+    'head':          {'lr': 0.001, 'wd': 1},
+    'conv_out':      {'lr': 0.001, 'wd': 1}
     }
     
     net_parameters = return_layer_coficients(net, LAYER_SETTINGS)
@@ -318,7 +234,6 @@ def main():
     for (lr_m, wd_m), params in net_parameters.items()
     ]
 
-    
     # Create optimizer.
     opt = torch.optim.SGD(
         params=optim_params,
@@ -333,37 +248,9 @@ def main():
         opt, step_size=args.lr_stepsize, gamma=args.lr_gamma
     )
 
-    ################################################
-    # IV. Pre-trained parameters.
-    ################################################
-    # Load parameters from pre-trained VGG-16 Caffe model.
-    
+    #Init weights, if fine tuning was turned on    
+    chose_initializer(args, net, device)
 
-    # 2. Lógica de inicialização simplificada
-    if not args.fine_tuning:
-        tag = "NULL"
-    elif isinstance(net.module, OCTHED):
-        initializer = OctaveVGGInitializer()
-        tag = "OCTHED"
-    elif isinstance(net.module, HED):
-        if args.vgg16_caffe:
-            initializer = CaffeVGGInitializer(path=args.vgg16_caffe, only_vgg=True)
-            tag = "HED CAFFE"
-        else:
-            initializer = OctaveVGGInitializer()
-            tag = "HED"
-    elif isinstance(net.module, FFCHED):
-        raise NotImplementedError('Not implemented yet!')
-    elif isinstance(net.module, (EXITHED, DENSEHED)): # Tupla para múltiplos tipos
-        initializer = ExitVGGInitializer()
-        tag = "EXITHED" 
-    elif isinstance(net.module, UncertHED):
-        initializer = UncertHEDInitializar()
-        tag = "UNCERTHED"
-    print(f"FINE-TUNING {tag}")
-    
-
-    initializer.load(net, device) if args.fine_tuning else 0
     # Resume the checkpoint.
     if args.checkpoint:
         load_checkpoint(net, opt, args.checkpoint)  # Omit the returned values.
@@ -372,8 +259,6 @@ def main():
     if args.caffe_model:
         load_pretrained_caffe(net, args.caffe_model)
 
-    if args.loss == 'weight_cross_entropy':
-        loss_fn = weighted_cross_entropy_loss
 
     print("BE CAREFULL! TRAIN AND DATASET UNCERTLY")
     ################################################
@@ -401,7 +286,7 @@ def main():
                 epoch,
                 save_dir=join(output_dir, 'epoch-{}-train'.format(epoch)),
             )
-            test(
+            test_uncertly(
                 test_loader,
                 net,
                 save_dir=join(output_dir, 'epoch-{}-test'.format(epoch)),
@@ -429,9 +314,11 @@ def main():
             parameters = {}
             parameters['LR'] = args.lr
             parameters['EPOCHS'] = args.max_epoch
-            parameters['DATASET'] = train_dataset.__class__.__name__
+            parameters['DATASET'] = train_loader.dataset.__class__.__name__
             parameters['FINE_TUNING'] = args.fine_tuning    
             parameters['MODEL'] = net.__class__.__name__
+            parameters['MACS'] = macs
+            parameters['PARAMS'] = params
             write_config_yaml(config_dict=parameters, target_dir = output_dir)
 
             
@@ -525,7 +412,7 @@ def train(train_loader, net, opt, lr_schd, epoch, save_dir, loss_fn):
     # Return the epoch average batch_loss.
     return batch_loss_meter.avg
 
-def train_uncertly(train_loader : BSDS_UncertLoader, net, opt, lr_schd, epoch, save_dir):
+def train_uncertly(train_loader, net, opt, lr_schd, epoch, save_dir):
     """Training procedure."""
     # Create the directory.
     if not isdir(save_dir):
@@ -684,46 +571,8 @@ def test_uncertly(test_loader, net, save_dir):
         # print('Test batch {}/{}.'.format(batch_index + 1, len(test_loader)))
     
 
-def weighted_cross_entropy_loss(preds, edges):
-    """Calculate sum of weighted cross entropy loss."""
-    # Reference:
-    #   hed/src/caffe/layers/sigmoid_cross_entropy_loss_layer.cpp
-    #   https://github.com/s9xie/hed/issues/7
-    mask = (edges > 0.5).float()
-    b, c, h, w = mask.shape
-    num_pos = torch.sum(mask, dim=[1, 2, 3]).float()  # Shape: [b,].
-    num_neg = c * h * w - num_pos  # Shape: [b,].
-    weight = torch.zeros_like(mask)
-    weight[edges > 0.5] = num_neg / (num_pos + num_neg)
-    weight[edges <= 0.5] = num_pos / (num_pos + num_neg)
-    # Calculate loss.
-    losses = F.binary_cross_entropy(
-        preds.float(), edges.float(), weight=weight, reduction='none'
-    )
-    loss = torch.sum(losses) / b
-    return loss
 
-def cross_entropy_loss_RCF(prediction, labelef, std, ada):
-    label = labelef.long()
-    mask = label.float()
-    num_positive = torch.sum((mask == 1).float()).float()
-    num_negative = torch.sum((mask == 0).float()).float()
-    num_two = torch.sum((mask == 2).float()).float()
-    assert (
-        num_negative + num_positive + num_two
-        == label.shape[0] * label.shape[1] * label.shape[2] * label.shape[3]
-    )
-    assert num_two == 0
-    mask[mask == 1] = 1.0 * num_negative / (num_positive + num_negative)
-    mask[mask == 0] = 1.1 * num_positive / (num_positive + num_negative)
-    mask[mask == 2] = 0
 
-    new_mask = mask * torch.exp(std * ada)
-    cost = F.binary_cross_entropy(
-        prediction, labelef, weight=new_mask.detach(), reduction='sum'
-    )
-
-    return cost, mask
 
 if __name__ == '__main__':
     main()

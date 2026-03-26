@@ -266,5 +266,71 @@ class UncertHEDInitializar(AbstractVGGInitializer):
                     nn.init.kaiming_normal_(layer.weight)
                     nn.init.zeros_(layer.bias)
 
+def weights_init(m : torch.tensor):
+        """Weight initialization function."""
+        if isinstance(m, nn.Conv2d):
+            # Initialize: m.weight.
+            if m.weight.data.shape == torch.Size([1, 5, 1, 1]):
+                # Constant initialization for fusion layer in HED network.
+                torch.nn.init.constant_(m.weight, 0.2)
+            else:
+                # Zero initialization following official repository.
+                # Reference: hed/docs/tutorial/layers.md
+                m.weight.data.zero_()
+            # Initialize: m.bias.
+            if m.bias is not None:
+                # Zero initialization.
+                m.bias.data.zero_()
+        elif isinstance(m, OctaveConv):
+            if m.conv_h2h is not None:
+                nn.init.zeros_(m.conv_h2h.weight)
+                nn.init.zeros_(m.conv_h2h.bias)
 
-        
+            if m.conv_l2l is not None:
+                nn.init.zeros_(m.conv_l2l.weight)
+                nn.init.zeros_(m.conv_l2l.bias)
+
+            if m.conv_h2l is not None:
+                nn.init.zeros_(m.conv_h2l.weight)
+                nn.init.zeros_(m.conv_h2l.bias)
+
+            if m.conv_l2h is not None:
+                nn.init.zeros_(m.conv_l2h.weight)
+                nn.init.zeros_(m.conv_l2h.bias)
+
+
+def default_initializer(net : nn.Module):
+    net.apply(weights_init)
+
+def chose_initializer(args, net, device):
+    if not args.fine_tuning:
+        tag = "NULL"
+    elif args.model == 'OCTHED':
+        initializer = OctaveVGGInitializer()
+        tag = "OCTHED"
+    elif args.model == 'HED':
+        if args.vgg16_caffe:
+            initializer = CaffeVGGInitializer(path=args.vgg16_caffe, only_vgg=True)
+            tag = "HED CAFFE"
+        else:
+            initializer = OctaveVGGInitializer()
+            tag = "HED"
+    elif args.model ==  'FFCHED':
+        raise NotImplementedError('Not implemented yet!')
+    elif args.model in ['EXITHED', 'DENSEHED']: # Tupla para múltiplos tipos
+        initializer = ExitVGGInitializer()
+        tag = "EXITHED" 
+    elif args.model.upper() == 'UNCERTHED':
+        initializer = UncertHEDInitializar()
+        tag = "UNCERTHED"
+    elif args.model.upper() == 'UNCERTHEDOCT':
+        initializer = OctaveVGGInitializer()
+        tag = "UNCERTHEDOCT"
+    else: 
+        raise ValueError()
+    
+    print(f"FINE-TUNING {tag}")
+    
+
+    if args.fine_tuning:
+        initializer.load(net, device) 

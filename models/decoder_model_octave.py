@@ -1,14 +1,14 @@
 import numpy as np
 import torch
 from torch import nn
-from models.decoder import DecoderUnet
+from models.decoder_octave import DecoderUnetOctave 
 
 
-class UncertHED(nn.Module):
+class UNCERTHED_OCTAVE(nn.Module):
     """HED network."""
 
-    def __init__(self, device):
-        super(UncertHED, self).__init__()
+    def __init__(self, device, alpha = 0):
+        super(UNCERTHED_OCTAVE, self).__init__()
 
         self.device = device
         # Layers.
@@ -38,8 +38,8 @@ class UncertHED(nn.Module):
         self.maxpool = nn.MaxPool2d(2, stride=2, ceil_mode=True)
 
         
-        self.decoderMEAN = DecoderUnet()
-        self.decoderSTD = DecoderUnet()
+        self.decoderMEAN = DecoderUnetOctave(alpha = alpha).to(device)
+        self.decoderSTD = DecoderUnetOctave(alpha = alpha).to(device)
 
     def forward(self, x : torch.tensor):
         # VGG-16 network.

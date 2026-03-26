@@ -1,39 +1,36 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from models.octave_conv import Conv_BN_ACT
 
-class DoubleConv(nn.Module):
+class DoubleConvOctave(nn.Module):
     """(convolution => [BN] => ReLU) * 2"""
 
-    def __init__(self, in_channels, out_channels, mid_channels=None):
+    def __init__(self, in_channels, out_channels, mid_channels=None, alpha_in = 0, alpha_mid = 0, alpha_out = 0):
         super().__init__()
         if not mid_channels:
             mid_channels = out_channels
-        self.double_conv = nn.Sequential(
-            nn.Conv2d(in_channels, mid_channels, kernel_size=3, padding=1, bias=True),
-            nn.BatchNorm2d(mid_channels),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(mid_channels, out_channels, kernel_size=3, padding=1, bias=True),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True)
+        self.double_conv_oct = nn.Sequential(
+            Conv_BN_ACT(in_channels,  mid_channels,  kernel_size= 3, alpha_in = alpha_in, alpha_out= alpha_mid, padding = 1, bias = True),
+            Conv_BN_ACT(mid_channels, out_channels, kernel_size = 3, alpha_in = alpha_mid,alpha_out= alpha_out, padding = 1, bias = True)
         )
 
     def forward(self, x):
-        return self.double_conv(x)
+        return self.double_conv_oct(x)[0] #Return a tuple. But alpha out is 0
 
-class Up(nn.Module):
+class UpOctave(nn.Module):
     """Upscaling then double conv"""
 
-    def __init__(self, in_channels, out_channels, bilinear=True):
+    def __init__(self, in_channels, out_channels, alpha_in = 0.5, alpha_out = 0, bilinear=True):
         super().__init__()
 
         # if bilinear, use the normal convolutions to reduce the number of channels
         if bilinear:
             self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
-            self.conv = DoubleConv(in_channels, out_channels, in_channels // 2)
+            self.conv = DoubleConvOctave(in_channels, out_channels, in_channels // 2, alpha = alpha_in)
         else:
             self.up = nn.ConvTranspose2d(in_channels, in_channels // 2, kernel_size=2, stride=2)
-            self.conv = DoubleConv(in_channels, out_channels)
+            self.conv = DoubleConvOctave(in_channels, out_channels)
 
     def forward(self, x1, x2):
         x1 = self.up(x1)
@@ -64,36 +61,37 @@ class SegmentationHead(nn.Module):
             upsampling,
             conv2d
         )
-
-
     
     def forward(self, x):
         return self.head(x)
 
 
-class DecoderUnet(nn.Module):
+class DecoderUnetOctave(nn.Module):
     
-    def __init__(self, channels_output = (64, 128, 256, 512, 512), num_classes_decoder = 8):
+    def __init__(self, channels_output = (64, 128, 256, 512, 512), num_classes_decoder = 16, alpha = 0):
 
         super().__init__()
         assert len(channels_output) == 5
         ch1, ch2, ch3, ch4, ch5 = channels_output
-
-        self.extractor5 = DoubleConv(ch5, ch5)
-        self.up4 = Up(ch5 + ch4, ch3)
-        self.up3 = Up(2*ch3,  ch2)
-        self.up2 = Up(2*ch2,  ch1)
-        self.up1 = Up(2*ch1,  ch1)
         
-        #64 -> 16
-        self.conv_out = nn.Sequential(
-            nn.Conv2d(ch1, num_classes_decoder, kernel_size= 1, padding = 0),
+        # self.extractor5 = DoubleConvOctave(512, 512)
+        # self.up4 = UpOctave(512 + 512, 256)
+        # self.up3 = UpOctave(256 + 256,  128)
+        # self.up2 = UpOctave(128 + 128,  64)
+        # self.up1 = UpOctave(64+64,  64)
+        self.extractor5 = DoubleConvOctave(ch5, ch5, alpha = alpha)
+        self.up4 = UpOctave(ch5 + ch4, ch3, alpha = alpha)
+        self.up3 = UpOctave(2*ch3 ,  ch2, alpha = alpha)
+        self.up2 = UpOctave(2*ch2,  ch1, alpha = alpha)
+        self.up1 = UpOctave(2*ch1,  ch1, alpha = alpha)
+        
+        # 64 -> 16
+        self.convout = nn.Sequential(
+            nn.Conv2d(ch1, num_classes_decoder, kernel_size= 1, padding= 0),
             nn.ReLU()
-        )
-
-        #16 -> 1 (map)
-        self.head = SegmentationHead(num_classes_decoder, 1, kernel_size= 3)
-
+            )
+    
+        self.head = SegmentationHead(num_classes_decoder, 1, kernel_size=3)
 
     def forward(self, features : list):
         assert len(features) == 5
@@ -105,8 +103,8 @@ class DecoderUnet(nn.Module):
         x2 = self.up2(x3, f2)
         x1 = self.up1(x2, f1)
         
-        result = self.conv_out(x1)
-        result = self.head(result)
+        result = self.conv_out()
+        result = self.head(x1)
         return result
 
 
@@ -119,7 +117,7 @@ if __name__ == '__main__':
     t4 = torch.randn(batch_size, 512, 64, 64)    # Nível 4
     t5 = torch.randn(batch_size, 512, 32, 32)    # Bottleneck (Fundo da U)
     chs = (64, 128, 256, 512, 512)
-    m = DecoderUnet(chs, num_classes= 16)
+    m = DecoderUnetOctave(chs, num_classes= 16)
 
     out = m([t1, t2, t3, t4, t5])
     print(out.max())
