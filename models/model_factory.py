@@ -6,6 +6,8 @@ from models.hed_model import HED
 from models.fourier_model import FFCHED
 from models.side_outputs_dense_model import DENSEHED
 from models.decoder_model_octave import UNCERTHED_OCTAVE
+from models.octave_model_full import OCTHEDFULL
+from models.octave_model_full_side_layer import OCTHEDFULL_SIDE
 
 import torch.nn as nn
 
@@ -14,9 +16,12 @@ def get_model(args, device = 'cpu'):
     target_layers = args.octave_layers
     model_name = args.model
 
+    print(target_layers)
     MODELS = {
         'HED': lambda: HED(device),
         'OCTHED': lambda: OCTHED(device, alpha=float(alpha), octave_layers=target_layers),
+        'OCTHEDFULL': lambda: OCTHEDFULL(device, alpha = float(alpha), octave_layers=target_layers),
+        'OCTHEDFULL_SIDE' : lambda: OCTHEDFULL_SIDE(device, alpha = float(alpha), octave_layers = target_layers),
         'EXITHED': lambda: EXITHED(device),
         'UNCERTHED': lambda: UncertHED(device),
         'FFCHED' : lambda: FFCHED(device, ratio = float(alpha), fourier_layer=target_layers),
@@ -26,5 +31,5 @@ def get_model(args, device = 'cpu'):
     
     if model_name not in MODELS:
         raise ValueError(f"Can't recognize {model_name}.")
-        
+    print((model_name))
     return nn.DataParallel(MODELS[model_name]())

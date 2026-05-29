@@ -6,10 +6,14 @@ from models.octave_conv import Conv_BN_ACT
 class DoubleConvOctave(nn.Module):
     """(convolution => [BN] => ReLU) * 2"""
 
-    def __init__(self, in_channels, out_channels, mid_channels=None, alpha_in = 0, alpha_mid = 0, alpha_out = 0):
+    def __init__(self, in_channels, out_channels, mid_channels=None, alpha_in = 0, alpha_mid = None, alpha_out = 0):
         super().__init__()
         if not mid_channels:
             mid_channels = out_channels
+
+        if not alpha_mid:
+            alpha_mid = alpha_out 
+
         self.double_conv_oct = nn.Sequential(
             Conv_BN_ACT(in_channels,  mid_channels,  kernel_size= 3, alpha_in = alpha_in, alpha_out= alpha_mid, padding = 1, bias = True),
             Conv_BN_ACT(mid_channels, out_channels, kernel_size = 3, alpha_in = alpha_mid,alpha_out= alpha_out, padding = 1, bias = True)
@@ -21,16 +25,16 @@ class DoubleConvOctave(nn.Module):
 class UpOctave(nn.Module):
     """Upscaling then double conv"""
 
-    def __init__(self, in_channels, out_channels, alpha_in = 0.5, alpha_out = 0, bilinear=True):
+    def __init__(self, in_channels, out_channels, alpha = 0.5, bilinear=True):
         super().__init__()
 
         # if bilinear, use the normal convolutions to reduce the number of channels
         if bilinear:
             self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
-            self.conv = DoubleConvOctave(in_channels, out_channels, in_channels // 2, alpha = alpha_in)
+            self.conv = DoubleConvOctave(in_channels, out_channels, in_channels // 2, alpha_in = 0, alpha_mid = alpha, alpha_out=0)
         else:
             self.up = nn.ConvTranspose2d(in_channels, in_channels // 2, kernel_size=2, stride=2)
-            self.conv = DoubleConvOctave(in_channels, out_channels)
+            self.conv = DoubleConvOctave(in_channels, out_channels, alpha_in = 0, alpha_mid = alpha, alpha_out=0)
 
     def forward(self, x1, x2):
         x1 = self.up(x1)
@@ -79,14 +83,14 @@ class DecoderUnetOctave(nn.Module):
         # self.up3 = UpOctave(256 + 256,  128)
         # self.up2 = UpOctave(128 + 128,  64)
         # self.up1 = UpOctave(64+64,  64)
-        self.extractor5 = DoubleConvOctave(ch5, ch5, alpha = alpha)
+        self.extractor5 = DoubleConvOctave(ch5, ch5, alpha_in = 0, alpha_mid = alpha, alpha_out= 0)
         self.up4 = UpOctave(ch5 + ch4, ch3, alpha = alpha)
-        self.up3 = UpOctave(2*ch3 ,  ch2, alpha = alpha)
-        self.up2 = UpOctave(2*ch2,  ch1, alpha = alpha)
-        self.up1 = UpOctave(2*ch1,  ch1, alpha = alpha)
+        self.up3 = UpOctave(2*ch3    , ch2, alpha = alpha)
+        self.up2 = UpOctave(2*ch2    , ch1, alpha = alpha)
+        self.up1 = UpOctave(2*ch1    , ch1, alpha = alpha)
         
         # 64 -> 16
-        self.convout = nn.Sequential(
+        self.conv_out = nn.Sequential(
             nn.Conv2d(ch1, num_classes_decoder, kernel_size= 1, padding= 0),
             nn.ReLU()
             )
@@ -96,15 +100,14 @@ class DecoderUnetOctave(nn.Module):
     def forward(self, features : list):
         assert len(features) == 5
         f1, f2, f3, f4, f5 = features
-
         x5 = self.extractor5(f5)
         x4 = self.up4(x5, f4)
         x3 = self.up3(x4, f3)
         x2 = self.up2(x3, f2)
         x1 = self.up1(x2, f1)
         
-        result = self.conv_out()
-        result = self.head(x1)
+        result = self.conv_out(x1)
+        result = self.head(result)
         return result
 
 

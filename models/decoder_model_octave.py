@@ -47,7 +47,6 @@ class UNCERTHED_OCTAVE(nn.Module):
             diff = 4 - x.dim()
             
             x.unsqueeze_(0)
-
             
 
         image_h, image_w = x.shape[2], x.shape[3]
@@ -74,10 +73,8 @@ class UNCERTHED_OCTAVE(nn.Module):
         conv5_3 = self.relu(self.conv5_3(conv5_2))  # Side output 5.
 
         features = [conv1_2, conv2_2, conv3_3, conv4_3, conv5_3]
-        
         mean = self.decoderMEAN(features)
         mean = crop(mean, image_h, image_w, 0, 0)
-
         std = self.decoderSTD(features)
         std = crop(std, image_h, image_w, 0, 0)
         std = nn.Softplus()(std)
