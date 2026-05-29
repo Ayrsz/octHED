@@ -11,7 +11,11 @@ class MaxPoolTuple(nn.Module):
         self.maxpool = nn.MaxPool2d(kernel_size=2, stride=2)
 
     def forward(self, x: tuple):
-        (high, low) = x
+        if type(x) != tuple:
+            high, low = x, None
+        else:
+            (high, low) = x
+        
         if low is None:
             return (self.maxpool(high), None)
         elif high is None:
@@ -23,7 +27,9 @@ class MaxPoolTuple(nn.Module):
 class OCTHED(nn.Module):
     """OCTHED network."""
 
-    def __init__(self, device, alpha, octave_layers=['conv2_1', 'conv2_2']):
+    def __init__(self, device, alpha, 
+                 octave_layers=['conv2_1', 'conv2_2', 'conv3_1', 'conv3_2', 'conv3_3', 'conv4_1', 'conv4_2',
+                                'conv4_3', 'conv5_1', 'conv5_2', 'conv5_3']):
         super(OCTHED, self).__init__()
         # Layers.
         self.relu = nn.ReLU
@@ -292,7 +298,7 @@ class OCTHED(nn.Module):
         conv2_2 = abstract_forward(
             conv=self.conv2_2, x=conv2_1, activation=self.relu()
         )  # Side output 2
-        pool2 = self.maxpool(conv2_2)
+        pool2 = self.maxpool_octave(conv2_2)
 
         conv3_1 = abstract_forward(
             conv=self.conv3_1, x=pool2, activation=self.relu()
@@ -303,7 +309,7 @@ class OCTHED(nn.Module):
         conv3_3 = abstract_forward(
             conv=self.conv3_3, x=conv3_2, activation=self.relu()
         )  # Side output 3
-        pool3 = self.maxpool(conv3_3)
+        pool3 = self.maxpool_octave(conv3_3)
 
         conv4_1 = abstract_forward(
             conv=self.conv4_1, x=pool3, activation=self.relu()
@@ -314,7 +320,7 @@ class OCTHED(nn.Module):
         conv4_3 = abstract_forward(
             conv=self.conv4_3, x=conv4_2, activation=self.relu()
         )  # Side output 4
-        pool4 = self.maxpool(conv4_3)
+        pool4 = self.maxpool_octave(conv4_3)
 
         conv5_1 = abstract_forward(
             conv=self.conv5_1, x=pool4, activation=self.relu()

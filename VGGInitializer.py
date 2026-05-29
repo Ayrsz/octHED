@@ -94,6 +94,8 @@ class OctaveVGGInitializer(AbstractVGGInitializer):
             vgg_layers[10:13],
         ]
 
+        
+
         for hed_set, vgg_set in zip(hed_blocks, vgg_blocks):
             # assert len(hed_set) == len(vgg_blocks), f"{len(hed_set)} and {len(vgg_blocks)}"
             for hed_layer, vgg_layer in zip(hed_set, vgg_set):
@@ -199,7 +201,7 @@ class ExitVGGInitializer(AbstractVGGInitializer):
             nn.init.xavier_normal_(layer_exitation.linear2.weight)
             nn.init.constant_(layer_exitation.linear2.bias, 1)
 
-class UncertHEDInitializar(AbstractVGGInitializer):
+class UncertHEDInitializer(AbstractVGGInitializer):
     def load(self, net: nn.DataParallel, device: str):
 
         # A Data Parallel atribute
@@ -266,6 +268,8 @@ class UncertHEDInitializar(AbstractVGGInitializer):
                     nn.init.kaiming_normal_(layer.weight)
                     nn.init.zeros_(layer.bias)
 
+    
+
 def weights_init(m : torch.tensor):
         """Weight initialization function."""
         if isinstance(m, nn.Conv2d):
@@ -305,7 +309,7 @@ def default_initializer(net : nn.Module):
 def chose_initializer(args, net, device):
     if not args.fine_tuning:
         tag = "NULL"
-    elif args.model == 'OCTHED':
+    elif args.model == 'OCTHED' or args.model == 'OCTHEDFULL' or args.model == 'OCTHEDFULL_SIDE':
         initializer = OctaveVGGInitializer()
         tag = "OCTHED"
     elif args.model == 'HED':
@@ -321,10 +325,10 @@ def chose_initializer(args, net, device):
         initializer = ExitVGGInitializer()
         tag = "EXITHED" 
     elif args.model.upper() == 'UNCERTHED':
-        initializer = UncertHEDInitializar()
+        initializer = UncertHEDInitializer()
         tag = "UNCERTHED"
     elif args.model.upper() == 'UNCERTHEDOCT':
-        initializer = OctaveVGGInitializer()
+        initializer = UncertHEDInitializer()
         tag = "UNCERTHEDOCT"
     else: 
         raise ValueError()
